@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Demurrage Calculator</title>
+<style>
+  body { font-family: Arial, sans-serif; margin:0; padding:0; background:#e6f0fa; color:#003366;}
+  .container { max-width:900px; margin:30px auto; background:#fff; padding:25px; border-radius:12px; box-shadow:0 4px 12px rgba(0,0,0,0.1);}
+  h2 { text-align:center; color:#004080; margin-bottom:20px;}
+  label { display:block; font-weight:bold; margin-top:10px;}
+  select, input[type="number"], input[type="date"] { width:100%; padding:8px 10px; margin:5px 0 15px; border-radius:6px; border:1px solid #a0c4ff;}
+  button { width:100%; padding:12px; font-size:16px; font-weight:bold; color:#fff; background:linear-gradient(90deg,#4da6ff,#1a75ff); border:none; border-radius:8px; cursor:pointer; margin-top:10px; transition:.3s;}
+  button:hover { background:linear-gradient(90deg,#1a75ff,#004080);}
+  #result { margin-top:20px; font-weight:bold; font-size:18px; text-align:center; color:#d32f2f;}
+  table { border-collapse: collapse; margin-top:15px; width:100%; }
+  th, td { border:1px solid #a0c4ff; padding:8px 12px; text-align:center; }
+  th { background-color:#cce0ff;}
+  .active { background-color:#b3d1ff; font-weight:bold;}
+  .info { font-size:14px; cursor:pointer; color:#004080; text-decoration:underline;}
+  #farEastPorts { display:none; font-size:13px; background:#f0f8ff; padding:10px; border-radius:6px; max-height:150px; overflow:auto; margin-top:5px; }
+  .flex-row { display:flex; align-items:center; margin-bottom:10px;}
+  .flex-row label { margin:0; font-weight:bold; }
+  .flex-row input[type="checkbox"] { margin-right:8px; transform: scale(1.2);}
+  .flex-between { display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; }
+  .summary { font-size:16px; line-height:1.5; margin:20px 0; padding:12px; background:#f8fbff; border-left:4px solid #1a75ff;}
+</style>
+</head>
+<body>
+
+<div class="container">
+  <h2>Demurrage Calculator (Ukraine & Poland)</h2>
+
+  <label for="country">Country / Port:</label>
+  <select id="country" onchange="updateCheckboxes()">
+    <option value="UA">Ukraine</option>
+    <option value="Gdansk">Gdansk</option>
+    <option value="Gdynia">Gdynia</option>
+  </select>
+
+  <label for="containerType">Container Type:</label>
+  <select id="containerType">
+    <option value="20DV">20 DV</option>
+    <option value="40DV">40 DV / HC</option>
+    <option value="45DV">45 DRY</option>
+    <option value="20SP">20 SP / FL</option>
+    <option value="40SP">40 SP / FL</option>
+    <option value="40RE">40 RE / HR</option>
+    <option value="20RE">20 RE</option>
+  </select>
+
+  <label for="freeDays">Free Days (your own):</label>
+  <input type="number" id="freeDays" min="0" value="0">
+
+  <label for="dischargeDate">Discharge Date (Available / Unloaded):</label>
+  <input type="date" id="dischargeDate">
+
+  <label for="pickupDate">Pickup Date (Gate Out):</label>
+  <input type="date" id="pickupDate">
+
+  <div id="dangerousCargoBlock" class="flex-row" style="display:none;">
+    <input type="checkbox" id="dangerousCargo">
+    <label for="dangerousCargo">Dangerous Cargo</label>
+  </div>
+
+  <div id="specialTariffBlock" class="flex-between" style="display:none;">
+    <div class="flex-row">
+      <input type="checkbox" id="specialTariff">
+      <label for="specialTariff">Special Tariff – ex Far East</label>
+    </div>
+    <div class="info" onclick="toggleFarEast()">What is Far East?</div>
+  </div>
+
+  <div id="farEastPorts">
+    BATANGAS, BELAWAN, BUSAN, DALIAN, DA-NANG, DAVAO, FUZHOU, GWANGYANG, HAIPHONG, HAKATA FUKUOKA, HONG KONG, JAKARTA, KAMPONG SAOM (SIHANOUKVILLE), KAOHSIUNG, KEELUNG, KOBE, LAEM CHABANG, MANILA NORTH, MANILA SOUTH, NAGOYA, NANSHA, NINGBO, OSAKA, PANJANG, PASIR GUDANG, PENANG, PHNOM PENH, PORT KLANG, QINGDAO, QINZHOU, QUINHON, SEMARANG, SHANGHAI, SHEKOU, SINGAPORE, SUBIC, SURABAYA, TAICHUNG, TANJUNG PELEPAS, TIANJINXINGANG, TOKYO, VUNG TAU, XIAMEN, YANGON, YANTIAN, YOKKAICHI, YOKOHAMA
+  </div>
+
+  <button onclick="calculateDemurrage()">Calculate</button>
+
+  <div id="result"></div>
+  <div id="breakdown"></div>
+</div>
+
+<script>
+function toggleFarEast() {
+  const div = document.getElementById('farEastPorts');
+  div.style.display = div.style.display === 'none' ? 'block' : 'none';
+}
+
+function updateCheckboxes() {
+  const country = document.getElementById('country').value;
+  const dangerousBlock = document.getElementById('dangerousCargoBlock');
+  const specialBlock   = document.getElementById('specialTariffBlock');
+
+  if (country === 'Gdansk' || country === 'Gdynia') {
+    dangerousBlock.style.display = 'flex';
+    specialBlock.style.display = 'flex';
+  } else {
+    dangerousBlock.style.display = 'none';
+    specialBlock.style.display = 'none';
+    document.getElementById('dangerousCargo').checked = false;
+    document.getElementById('specialTariff').checked = false;
+  }
+}
+
+window.onload = updateCheckboxes;
+
+const tariffs = {
+  UA: {
+    "20DV": {free:18, periods:[{days:7, rate:30},{days:7, rate:46},{days:Infinity, rate:56}]},
+    "40DV": {free:18, periods:[{days:7, rate:40},{days:7, rate:72},{days:Infinity, rate:82}]},
+    "45DV": {free:18, periods:[{days:7, rate:46},{days:7, rate:82},{days:Infinity, rate:94}]},
+    "20SP": {free:12, periods:[{days:7, rate:46},{days:7, rate:56},{days:Infinity, rate:62}]},
+    "40SP": {free:12, periods:[{days:7, rate:72},{days:7, rate:112},{days:Infinity, rate:120}]},
+    "40RE": {free:10, periods:[{days:3, rate:125},{days:Infinity, rate:250}]},
+    "20RE": {free:10, periods:[{days:3, rate:75},{days:Infinity, rate:125}]}
+  },
+  Gdansk: {
+    normal: {
+      "20DV": {free:10, periods:[{days:4, rate:55},{days:4, rate:70},{days:Infinity, rate:90}]},
+      "40DV": {free:10, periods:[{days:4, rate:80},{days:4, rate:100},{days:Infinity, rate:110}]},
+      "45DV": {free:10, periods:[{days:4, rate:92},{days:4, rate:115},{days:Infinity, rate:127}]},
+      "20SP": {free:6, periods:[{days:5, rate:50},{days:Infinity, rate:90}]},
+      "40SP": {free:6, periods:[{days:5, rate:80},{days:Infinity, rate:125}]},
+      "20RE": {free:5, periods:[{days:5, rate:80},{days:Infinity, rate:110}]},
+      "40RE": {free:5, periods:[{days:5, rate:120},{days:Infinity, rate:155}]}
+    },
+    dangerous: {
+      "20DV": {free:10, periods:[{days:4, rate:72},{days:4, rate:91},{days:Infinity, rate:117}]},
+      "40DV": {free:10, periods:[{days:4, rate:104},{days:4, rate:130},{days:Infinity, rate:143}]},
+      "45DV": {free:10, periods:[{days:4, rate:120},{days:4, rate:150},{days:Infinity, rate:165}]},
+      "20SP": {free:6, periods:[{days:5, rate:65},{days:Infinity, rate:117}]},
+      "40SP": {free:6, periods:[{days:5, rate:104},{days:Infinity, rate:163}]},
+      "20RE": {free:5, periods:[{days:5, rate:104},{days:Infinity, rate:143}]},
+      "40RE": {free:5, periods:[{days:5, rate:156},{days:Infinity, rate:202}]}
+    }
+  },
+  Gdynia: {
+    normal: {
+      "20DV": {free:7, periods:[{days:7, rate:30},{days:5, rate:45},{days:Infinity, rate:70}]},
+      "40DV": {free:7, periods:[{days:7, rate:40},{days:5, rate:80},{days:Infinity, rate:90}]},
+      "45DV": {free:7, periods:[{days:7, rate:46},{days:5, rate:95},{days:Infinity, rate:100}]},
+      "20SP": {free:6, periods:[{days:7, rate:50},{days:Infinity, rate:85}]},
+      "40SP": {free:6, periods:[{days:7, rate:75},{days:Infinity, rate:120}]},
+      "20RE": {free:5, periods:[{days:5, rate:80},{days:Infinity, rate:110}]},
+      "40RE": {free:5, periods:[{days:5, rate:120},{days:Infinity, rate:150}]}
+    },
+    dangerous: {
+      "20DV": {free:7, periods:[{days:7, rate:39},{days:5, rate:59},{days:Infinity, rate:91}]},
+      "40DV": {free:7, periods:[{days:7, rate:52},{days:5, rate:104},{days:Infinity, rate:117}]},
+      "45DV": {free:7, periods:[{days:7, rate:60},{days:5, rate:124},{days:Infinity, rate:130}]},
+      "20SP": {free:6, periods:[{days:7, rate:65},{days:Infinity, rate:111}]},
+      "40SP": {free:6, periods:[{days:7, rate:98},{days:Infinity, rate:156}]},
+      "20RE": {free:5, periods:[{days:5, rate:104},{days:Infinity, rate:143}]},
+      "40RE": {free:5, periods:[{days:5, rate:156},{days:Infinity, rate:195}]}
+    },
+    special: {
+      "20DV": {free:10, periods:[{days:4, rate:55},{days:4, rate:70},{days:Infinity, rate:90}]},
+      "40DV": {free:10, periods:[{days:4, rate:80},{days:4, rate:100},{days:Infinity, rate:110}]},
+      "45DV": {free:10, periods:[{days:4, rate:92},{days:4, rate:115},{days:Infinity, rate:127}]}
+    },
+    specialDangerous: {
+      "20DV": {free:10, periods:[{days:4, rate:72},{days:4, rate:91},{days:Infinity, rate:117}]},
+      "40DV": {free:10, periods:[{days:4, rate:104},{days:4, rate:130},{days:Infinity, rate:143}]},
+      "45DV": {free:10, periods:[{days:4, rate:120},{days:4, rate:150},{days:Infinity, rate:165}]}
+    }
+  }
+};
+
+function formatDate(d) {
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const yyyy = d.getFullYear();
+  return `${dd}.${mm}.${yyyy}`;
+}
+
+function calculateDemurrage() {
+  const country = document.getElementById('country').value;
+  const type    = document.getElementById('containerType').value;
+  const freeDaysUser = parseInt(document.getElementById('freeDays').value, 10) || 0;
+  const dischargeStr = document.getElementById('dischargeDate').value;
+  const pickupStr    = document.getElementById('pickupDate').value;
+  const dangerous = document.getElementById('dangerousCargo')?.checked || false;
+  const special   = document.getElementById('specialTariff')?.checked   || false;
+
+  if (!dischargeStr || !pickupStr) {
+    alert("Please select both Discharge Date and Pickup Date.");
+    return;
+  }
+
+  const startDate = new Date(dischargeStr);
+  const endDate   = new Date(pickupStr);
+
+  if (isNaN(startDate) || isNaN(endDate) || endDate < startDate) {
+    alert("Pickup date must be on or after discharge date.");
+    return;
+  }
+
+  const msPerDay = 1000 * 60 * 60 * 24;
+  const totalDays = Math.floor((endDate - startDate) / msPerDay) + 1;
+
+  let tariff;
+  if (country === 'UA') {
+    tariff = tariffs.UA[type];
+  } else if (country === 'Gdansk') {
+    tariff = dangerous ? tariffs.Gdansk.dangerous[type] : tariffs.Gdansk.normal[type];
+  } else if (country === 'Gdynia') {
+    if (special && dangerous)      tariff = tariffs.Gdynia.specialDangerous?.[type];
+    else if (special)              tariff = tariffs.Gdynia.special?.[type];
+    else if (dangerous)            tariff = tariffs.Gdynia.dangerous[type];
+    else                           tariff = tariffs.Gdynia.normal[type];
+  }
+
+  if (!tariff) {
+    alert("Tariff not found for this combination.");
+    return;
+  }
+
+  const currencySymbol = country === 'UA' ? 'USD' : 'EUR';
+
+  const lastFreeDate = new Date(startDate);
+  lastFreeDate.setDate(lastFreeDate.getDate() + freeDaysUser - 1);
+
+  const demurrageStart = new Date(startDate);
+  demurrageStart.setDate(demurrageStart.getDate() + freeDaysUser);
+
+  let daysCharged = totalDays - freeDaysUser;
+  if (daysCharged <= 0) {
+    document.getElementById("result").innerText = `Demurrage: 0 ${currencySymbol}`;
+    document.getElementById("breakdown").innerHTML = `
+      <div class="summary">
+        Total period: ${totalDays} days<br>
+        Free days applied: ${totalDays}<br>
+        Demurrage: none
+      </div>`;
+    return;
+  }
+
+  // Логика применения тарифов с учётом превышения бесплатных дней
+  let freeOffset = Math.max(0, freeDaysUser - tariff.free);
+  let remainingDays = daysCharged;
+  let currentDate = new Date(demurrageStart);
+  let totalCost = 0;
+
+  let breakdownHTML = `
+    <table>
+      <tr>
+        <th>Period</th>
+        <th>From</th>
+        <th>To</th>
+        <th>Days</th>
+        <th>Rate</th>
+        <th>Cost</th>
+      </tr>`;
+
+  for (let i = 0; i < tariff.periods.length; i++) {
+    let period = tariff.periods[i];
+    let periodDays = (period.days === Infinity) ? Infinity : period.days;
+
+    if (freeOffset > 0 && periodDays !== Infinity) {
+      if (freeOffset >= periodDays) {
+        freeOffset -= periodDays;
+        periodDays = 0;
+      } else {
+        periodDays -= freeOffset;
+        freeOffset = 0;
+      }
+    }
+
+    const chargeDays = (periodDays === Infinity) ? remainingDays : Math.min(remainingDays, periodDays);
+    const cost = chargeDays * period.rate;
+
+    if (chargeDays > 0) {
+      const fromDate = new Date(currentDate);
+      const toDate   = new Date(currentDate);
+      toDate.setDate(toDate.getDate() + chargeDays - 1);
+
+      breakdownHTML += `
+        <tr class="active">
+          <td>Period ${i+1}</td>
+          <td>${formatDate(fromDate)}</td>
+          <td>${formatDate(toDate)}</td>
+          <td>${chargeDays}</td>
+          <td>${period.rate}</td>
+          <td>${cost} ${currencySymbol}</td>
+        </tr>`;
+
+      currentDate.setDate(currentDate.getDate() + chargeDays);
+      totalCost += cost;
+      remainingDays -= chargeDays;
+    }
+
+    if (remainingDays <= 0) break;
+  }
+
+  breakdownHTML += '</table>';
+
+  document.getElementById("result").innerText = `Demurrage: ${totalCost} ${currencySymbol}`;
+
+  document.getElementById("breakdown").innerHTML = `
+    <div class="summary">
+      Total period on terminal: <b>${totalDays} days</b><br>
+      Free days: <b>${freeDaysUser}</b><br>
+      Free period: <b>${formatDate(startDate)} – ${formatDate(lastFreeDate)}</b><br>
+      Demurrage starts: <b>${formatDate(demurrageStart)}</b><br>
+      Charged days: <b>${daysCharged}</b>
+    </div>
+    ${breakdownHTML}`;
+}
+</script>
+</body>
+</html>
